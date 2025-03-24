@@ -19,6 +19,7 @@ using Uno.UI.Xaml;
 using CoreText;
 using ObjCRuntime;
 using Uno.UI.Xaml.Media;
+using Uno.Helpers;
 
 namespace Uno.UI.Xaml;
 
@@ -93,6 +94,10 @@ internal static class FontHelper
 			if (XamlFilePathHelper.TryGetMsAppxAssetPath(requestedFamily.Source, out var path))
 			{
 				font = GetCustomFont(path, fontProperties);
+			}
+			else if (AppDataUriEvaluator.TryGetMsAppDataPath(new Uri(requestedFamily.Source), out var appDataPath))
+			{
+				font = GetCustomFont(appDataPath, fontProperties);
 			}
 			else
 			{

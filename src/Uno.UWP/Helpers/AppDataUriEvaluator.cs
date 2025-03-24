@@ -16,6 +16,21 @@ namespace Uno.Helpers
 		private const string RoamingFolderRoute = "roaming";
 		private const string TemporaryFolderRoute = "temp";
 
+		public static bool TryGetMsAppDataPath(Uri appDataUri, out string path)
+		{
+			try
+			{
+				path = ToPath(appDataUri);
+				return true;
+			}
+			catch (Exception)
+			{
+				path = string.Empty;
+				return false;
+			}
+
+		}
+
 		/// <summary>
 		/// Converts given ms-appdata: URI to filesystem path.
 		/// </summary>

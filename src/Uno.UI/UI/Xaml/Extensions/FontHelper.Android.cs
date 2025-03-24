@@ -17,6 +17,8 @@ using Windows.Storage;
 using Uno.UI.Xaml.Media;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Uno.Helpers;
+using static Android.Graphics.ImageDecoder;
 
 
 namespace Microsoft.UI.Xaml
@@ -61,16 +63,28 @@ namespace Microsoft.UI.Xaml
 				{
 					var source = fontFamily.Source;
 
+					if (source.StartsWith("ms-appdata:///", StringComparison.OrdinalIgnoreCase))
+					{
+						if (TryLoadFromAppData(fontWeight.Weight, fontStretch, italic, source, out typeface))
+						{
+							return typeface;
+						}
+						else
+						{
+							throw new InvalidOperationException($"Unable to find [{fontFamily.Source}] from the application's local data.");
+						}
+					}
+
 					source = source.TrimStart("ms-appx://", ignoreCase: true);
 
-					if (!TryLoadFromPath(fontWeight.Weight, fontStretch, italic, source, out typeface))
+					if (!TryLoadFromAppX(fontWeight.Weight, fontStretch, italic, source, out typeface))
 					{
 						// The lookup used to be performed without the assets folder, even if its required to specify it
 						// with UWP. Keep this behavior for backward compatibility.
 						var legacySource = source.TrimStart("/assets/", ignoreCase: true);
 
 						// The path for AndroidAssets is not encoded, unlike assets processed by the RetargetAssets tool.
-						if (!TryLoadFromPath(fontWeight.Weight, fontStretch, italic, legacySource, out typeface, encodePath: false))
+						if (!TryLoadFromAppX(fontWeight.Weight, fontStretch, italic, legacySource, out typeface, encodePath: false))
 						{
 							throw new InvalidOperationException($"Unable to find [{fontFamily.Source}] from the application's assets.");
 						}
@@ -127,7 +141,33 @@ namespace Microsoft.UI.Xaml
 			};
 		}
 
-		private static bool TryLoadFromPath(int weight, FontStretch stretch, bool italic, string source, out Typeface? typeface, bool encodePath = true)
+		private static bool TryLoadFromAppData(int weight, FontStretch stretch, bool italic, string source, out Typeface? typeface)
+		{
+			source = FontFamilyHelper.RemoveHashFamilyName(source);
+			typeface = null;
+			Uri? sourceUri = null;
+			try
+			{
+				sourceUri = new Uri(source);
+			}
+			catch (Exception)
+			{
+				return false;
+			}
+
+			if (sourceUri.Scheme != "ms-appdata")
+				return false;
+
+			if (typeof(FontHelper).Log().IsEnabled(Uno.Foundation.Logging.LogLevel.Debug))
+			{
+				typeof(FontHelper).Log().Debug($"Searching for font as asset [{source}]");
+			}
+
+			string localPath = AppDataUriEvaluator.ToPath(sourceUri);
+			return TryLoadFromLocalPath(weight, stretch, italic, source, localPath, out typeface);
+		}
+
+		private static bool TryLoadFromAppX(int weight, FontStretch stretch, bool italic, string source, out Typeface? typeface, bool encodePath = true)
 		{
 			source = FontFamilyHelper.RemoveHashFamilyName(source);
 
@@ -142,10 +182,15 @@ namespace Microsoft.UI.Xaml
 
 			// We need to lookup assets manually, as assets are stored this way by android, but windows
 			// is case insensitive.
-			string actualAsset = AssetsHelper.FindAssetFile(encodedSource);
-			if (actualAsset != null)
+			string localPath = AssetsHelper.FindAssetFile(encodedSource);
+			return TryLoadFromLocalPath(weight, stretch, italic, source, localPath, out typeface);
+		}
+
+		private static bool TryLoadFromLocalPath(int weight, FontStretch stretch, bool italic, string source, string localPath, out Typeface? typeface)
+		{
+			if (localPath != null)
 			{
-				var builder = new Android.Graphics.Typeface.Builder(Android.App.Application.Context.Assets!, actualAsset);
+				var builder = new Android.Graphics.Typeface.Builder(Android.App.Application.Context.Assets!, localPath);
 				// NOTE: We are unable to use 'ital' axis here. If that axis doesn't exist in the
 				// font file, italic will break badly. However, if it exists, we will render "reasonable" (but not ideal) italic text.
 				builder.SetFontVariationSettings($"'wght' {weight}, 'wdth' {FontStretchToPercentage(stretch)}");
@@ -164,7 +209,7 @@ namespace Microsoft.UI.Xaml
 				{
 					if (typeof(FontHelper).Log().IsEnabled(Uno.Foundation.Logging.LogLevel.Debug))
 					{
-						typeof(FontHelper).Log().Debug($"Font [{source}] could not be created from asset [{actualAsset}]");
+						typeof(FontHelper).Log().Debug($"Font [{source}] could not be created from asset [{localPath}]");
 					}
 				}
 			}
@@ -172,7 +217,7 @@ namespace Microsoft.UI.Xaml
 			{
 				if (typeof(FontHelper).Log().IsEnabled(Uno.Foundation.Logging.LogLevel.Debug))
 				{
-					typeof(FontHelper).Log().Debug($"Font [{source}] could not be found in app assets using [{encodedSource}]");
+					typeof(FontHelper).Log().Debug($"Font [{source}] could not be found in app assets using [{localPath}]");
 				}
 			}
 
